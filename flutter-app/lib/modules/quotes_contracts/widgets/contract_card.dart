@@ -223,7 +223,7 @@ class ContractCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
 
-                // Action Buttons (Matching Image 2: "View details" & "Cancel")
+                // Action Buttons
                 Row(
                   children: [
                     Expanded(
@@ -242,25 +242,41 @@ class ContractCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (canCancel) ...[
-                      const SizedBox(width: 10),
+                    if (!isSigned && onSign != null) ...[
+                      const SizedBox(width: 8),
                       Expanded(
-                        child: OutlinedButton(
-                          onPressed: onCancel,
-                          style: OutlinedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1E1414),
-                            foregroundColor: const Color(0xFFF87171),
-                            side: const BorderSide(color: Color(0xFFEF4444), width: 1.2),
+                        child: ElevatedButton(
+                          onPressed: onSign,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: QcTheme.primary,
+                            foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             padding: const EdgeInsets.symmetric(vertical: 11),
                           ),
                           child: const Text(
-                            'Cancel',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                              color: Color(0xFFF87171),
-                            ),
+                            'Sign',
+                            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (canCancel) ...[
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: onCancel,
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E1414),
+                          foregroundColor: const Color(0xFFF87171),
+                          side: const BorderSide(color: Color(0xFFEF4444), width: 1.2),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 12),
+                        ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            color: Color(0xFFF87171),
                           ),
                         ),
                       ),

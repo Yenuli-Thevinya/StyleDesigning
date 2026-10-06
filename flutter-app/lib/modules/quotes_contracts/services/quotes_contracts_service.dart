@@ -1,10 +1,20 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/quote.dart';
 import '../models/contract.dart';
 import '../models/quote_item.dart';
 import '../../../services/auth/token_storage_service.dart';
+
+String generateUuid() {
+  final random = Random();
+  final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant RFC 4122
+  final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+}
 
 class QuoteFormPayload {
   final String projectRequestId;
@@ -32,10 +42,9 @@ class AiDraftPayload {
   final double budgetMin;
   final double budgetMax;
   final String styleProfile;
-  final String naturalLanguageScope;
-
+  final String? naturalLanguageScope;
   final double styleConfidence;
-  final List<String> preferences;
+  final String? preferences;
 
   AiDraftPayload({
     required this.projectRequestId,
@@ -45,9 +54,9 @@ class AiDraftPayload {
     required this.budgetMin,
     required this.budgetMax,
     required this.styleProfile,
-    required this.naturalLanguageScope,
-    this.styleConfidence = 0.8,
-    this.preferences = const [],
+    this.naturalLanguageScope,
+    this.styleConfidence = 0.88,
+    this.preferences,
   });
 
   Map<String, dynamic> toJson() => {
@@ -58,7 +67,7 @@ class AiDraftPayload {
         'budgetMin': budgetMin,
         'budgetMax': budgetMax,
         'styleProfile': styleProfile,
-        'naturalLanguageScope': naturalLanguageScope,
+        if (naturalLanguageScope != null) 'naturalLanguageScope': naturalLanguageScope,
         'styleConfidence': styleConfidence,
         'preferences': preferences,
       };
@@ -82,16 +91,20 @@ class AgentBudgetScopeResponse {
   });
 
   factory AgentBudgetScopeResponse.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'] as List<dynamic>? ?? [];
     return AgentBudgetScopeResponse(
-      scopeSummary: json['scopeSummary'] ?? '',
-      items: (json['items'] as List?)
-              ?.map((i) => QuoteItem.fromJson(Map<String, dynamic>.from(i)))
-              .toList() ??
-          [],
-      notes: json['notes'] ?? '',
-      estimatedTotal: (json['estimatedTotal'] ?? 0).toDouble(),
-      withinBudget: json['withinBudget'] ?? false,
-      source: json['source'] ?? 'unknown',
+      scopeSummary: json['scopeSummary']?.toString() ?? json['scope_summary']?.toString() ?? '',
+      items: rawItems
+          .map((i) => QuoteItem.fromJson(Map<String, dynamic>.from(i as Map)))
+          .toList(),
+      notes: json['notes']?.toString() ?? '',
+      estimatedTotal: (json['estimatedTotal'] is num)
+          ? (json['estimatedTotal'] as num).toDouble()
+          : (json['estimated_total'] is num)
+              ? (json['estimated_total'] as num).toDouble()
+              : double.tryParse(json['estimatedTotal']?.toString() ?? json['estimated_total']?.toString() ?? '0') ?? 0.0,
+      withinBudget: json['withinBudget'] == true || json['within_budget'] == true,
+      source: json['source']?.toString() ?? 'llm',
     );
   }
 }
@@ -167,16 +180,16 @@ class QuotesContractsService {
   }
 
   // Ensures any ID sent to backend is a valid UUID format
-  static String ensureValidGuid(String? val) {
+  static String ensureValidGuid([String? val]) {
     if (val == null || val.trim().isEmpty) {
-      return '00000000-0000-0000-0000-000000000001';
+      return generateUuid();
     }
     final trimmed = val.trim();
     final uuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
-    if (uuidRegex.hasMatch(trimmed)) {
+    if (uuidRegex.hasMatch(trimmed) && trimmed != '00000000-0000-0000-0000-000000000000') {
       return trimmed;
     }
-    return '00000000-0000-0000-0000-000000000001';
+    return generateUuid();
   }
 
   // Quick live connection test
@@ -386,7 +399,7 @@ class QuotesContractsService {
         uri,
         headers: headers,
         body: jsonEncode(payload.toJson()),
-      ).timeout(const Duration(seconds: 8));
+      ).timeout(const Duration(seconds: 25));
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = jsonDecode(res.body);
@@ -455,7 +468,7 @@ class QuotesContractsService {
         uri,
         headers: headers,
         body: jsonEncode(reqBody),
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 25));
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = jsonDecode(res.body);
@@ -491,7 +504,7 @@ class QuotesContractsService {
       final uri = Uri.parse('$_baseUrl/contracts').replace(queryParameters: queryParams.isEmpty ? null : queryParams);
       debugPrint('[QuotesContractsService] Fetching contracts from $uri');
       final headers = await _getHeaders();
-      final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 6));
+      final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 8));
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = jsonDecode(res.body);
@@ -513,6 +526,30 @@ class QuotesContractsService {
           }
         }
 
+        // Auto-link submitted quotes matching web app behavior
+        for (final q in _localQuotes) {
+          final s = q.status;
+          if (s == 'Submitted' || s == 'ClientReview') {
+            if (!contracts.any((c) => c.quoteId == q.id)) {
+              final shortId = q.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+              contracts.insert(0, Contract(
+                id: 'cnt-${shortId.length >= 4 ? shortId.substring(0, 4) : shortId}',
+                quoteId: q.id,
+                projectRequestId: q.projectRequestId,
+                designerId: q.designerId,
+                clientId: 'client-default',
+                status: 'PendingSignature',
+                totalAmount: q.totalCost,
+                termsSummary: q.scopeSummary.isNotEmpty ? q.scopeSummary : 'Interior Design Agreement',
+                terms: 'Official StyleSync Binding Agreement for ${q.scopeSummary}. Milestone schedule: 50% advance deposit due upon signing, and 50% balance upon final quality inspection and room handover.',
+                createdAt: q.createdAt ?? DateTime.now(),
+                updatedAt: q.updatedAt ?? DateTime.now(),
+                quote: q,
+              ));
+            }
+          }
+        }
+
         if (status == null || status == 'All statuses') {
           _localContracts.clear();
           _localContracts.addAll(contracts);
@@ -524,6 +561,30 @@ class QuotesContractsService {
       }
     } catch (e) {
       debugPrint('[QuotesContractsService] listContracts API error: $e. Returning cached store.');
+    }
+
+    // Auto-link submitted quotes in offline fallback too
+    for (final q in _localQuotes) {
+      final s = q.status;
+      if (s == 'Submitted' || s == 'ClientReview') {
+        if (!_localContracts.any((c) => c.quoteId == q.id)) {
+          final shortId = q.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+          _localContracts.insert(0, Contract(
+            id: 'cnt-${shortId.length >= 4 ? shortId.substring(0, 4) : shortId}',
+            quoteId: q.id,
+            projectRequestId: q.projectRequestId,
+            designerId: q.designerId,
+            clientId: 'client-default',
+            status: 'PendingSignature',
+            totalAmount: q.totalCost,
+            termsSummary: q.scopeSummary.isNotEmpty ? q.scopeSummary : 'Interior Design Agreement',
+            terms: 'Official StyleSync Binding Agreement for ${q.scopeSummary}. Milestone schedule: 50% advance deposit due upon signing, and 50% balance upon final quality inspection and room handover.',
+            createdAt: q.createdAt ?? DateTime.now(),
+            updatedAt: q.updatedAt ?? DateTime.now(),
+            quote: q,
+          ));
+        }
+      }
     }
 
     var filtered = List<Contract>.from(_localContracts);

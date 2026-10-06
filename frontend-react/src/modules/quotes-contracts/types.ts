@@ -1,61 +1,12 @@
 export type StatusLike = string | { value?: string; name?: string } | undefined | null;
 
-export type QuoteStatus = 
-  | "Draft"
-  | "Stage1Pending"
-  | "Stage1RevisionRequested"
-  | "Stage1Rejected"
-  | "Stage1Released"
-  | "Stage2Approved"
-  | "Stage2ChangesRequested"
-  | "Stage2Rejected"
-  // Legacy aliases
-  | "Submitted"
-  | "ClientReview"
-  | "RevisionRequested"
-  | "Accepted"
-  | "Rejected";
-
-export type ContractStatus = 
-  | "PendingSignature"
-  | "Active"
-  | "Completed"
-  | "Cancelled"
-  | "Draft";
-
 export interface QuoteItem {
   id?: string;
   description: string;
   category: string;
   quantity: number;
   unitCost: number;
-  lineTotal?: number;
   totalCost?: number;
-}
-
-export interface QuoteVersionItem {
-  id: string;
-  description: string;
-  category: string;
-  quantity: number;
-  unitCost: number;
-  lineTotal: number;
-}
-
-export interface QuoteVersion {
-  id: string;
-  versionNumber: number;
-  authorId: string;
-  authorRole: string;
-  materialsSubtotal: number;
-  laborSubtotal: number;
-  designFee: number;
-  contingencyAmount: number;
-  taxAmount: number;
-  totalCost: number;
-  notes?: string;
-  createdAt: string;
-  items: QuoteVersionItem[];
 }
 
 export interface Quote {
@@ -68,9 +19,6 @@ export interface Quote {
   status: StatusLike;
   totalCost: number;
   items: QuoteItem[];
-  currentVersion?: QuoteVersion;
-  versions?: QuoteVersion[];
-  contractId?: string;
   createdAt?: string;
   updatedAt?: string;
 }

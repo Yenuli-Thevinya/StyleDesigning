@@ -7,6 +7,7 @@ class QuoteCard extends StatelessWidget {
   final Quote quote;
   final VoidCallback? onEdit;
   final VoidCallback? onSubmit;
+  final VoidCallback? onAccept;
   final VoidCallback? onDelete;
   final VoidCallback? onTap;
 
@@ -15,6 +16,7 @@ class QuoteCard extends StatelessWidget {
     required this.quote,
     this.onEdit,
     this.onSubmit,
+    this.onAccept,
     this.onDelete,
     this.onTap,
   });
@@ -188,25 +190,79 @@ class QuoteCard extends StatelessWidget {
                   children: [
                     if (isDraft) ...[
                       // Edit Button
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: onEdit,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: QcTheme.textMain,
-                            backgroundColor: const Color(0xFF221E1B),
-                            side: const BorderSide(color: QcTheme.borderLight, width: 0.9),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
+                      if (onEdit != null) ...[
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: onEdit,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: QcTheme.textMain,
+                              backgroundColor: const Color(0xFF221E1B),
+                              side: const BorderSide(color: QcTheme.borderLight, width: 0.9),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            child: const Text('Edit', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                           ),
-                          child: const Text('Edit', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                         ),
-                      ),
-                      const SizedBox(width: 8),
+                        const SizedBox(width: 8),
+                      ],
 
                       // Submit Button
+                      if (onSubmit != null) ...[
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: onSubmit,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: QcTheme.textMain,
+                              backgroundColor: const Color(0xFF221E1B),
+                              side: const BorderSide(color: QcTheme.borderLight, width: 0.9),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            child: const Text('Submit', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                    ] else if (statusStr == 'revisionrequested') ...[
+                      if (onEdit != null) ...[
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: onEdit,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: QcTheme.textMain,
+                              backgroundColor: const Color(0xFF221E1B),
+                              side: const BorderSide(color: QcTheme.borderLight, width: 0.9),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            child: const Text('Revise', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                    ] else if (isSubmitted) ...[
+                      // Accept Button
+                      if (onAccept != null) ...[
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: onAccept,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: QcTheme.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            child: const Text('Accept Quote', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                    ] else ...[
+                      // View details for accepted/other
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: onSubmit,
+                          onPressed: onTap,
                           style: OutlinedButton.styleFrom(
                             foregroundColor: QcTheme.textMain,
                             backgroundColor: const Color(0xFF221E1B),
@@ -214,43 +270,29 @@ class QuoteCard extends StatelessWidget {
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
-                          child: const Text('Submit', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                    ] else if (isSubmitted) ...[
-                      // Accept Button
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: onSubmit,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: QcTheme.primary,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                          ),
-                          child: const Text('Accept Quote', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          child: const Text('View details', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                         ),
                       ),
                       const SizedBox(width: 8),
                     ],
 
-                    // Delete Button
-                    Container(
-                      width: 44,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2A1B1C),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFF572528), width: 0.9),
+                    // Delete Button (allowed for Draft, RevisionRequested, Submitted)
+                    if (onDelete != null && statusStr != 'accepted')
+                      Container(
+                        width: 44,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2A1B1C),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFF572528), width: 0.9),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFE57373)),
+                          onPressed: onDelete,
+                          padding: EdgeInsets.zero,
+                          tooltip: 'Delete quote',
+                        ),
                       ),
-                      child: IconButton(
-                        icon: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFE57373)),
-                        onPressed: onDelete,
-                        padding: EdgeInsets.zero,
-                        tooltip: 'Delete quote',
-                      ),
-                    ),
                   ],
                 ),
               ],

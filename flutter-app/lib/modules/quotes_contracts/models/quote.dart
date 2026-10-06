@@ -113,17 +113,19 @@ class Quote {
     this.contractId,
   });
 
+  static String normalizeStatus(dynamic raw) {
+    if (raw == null) return 'Draft';
+    final val = raw is Map ? (raw['name'] ?? raw['value'] ?? 'Draft').toString() : raw.toString();
+    if (val == 'Stage1Pending') return 'Submitted';
+    if (val == 'Stage1Released') return 'ClientReview';
+    if (val == 'Stage2Approved') return 'Accepted';
+    if (val == 'Stage2ChangesRequested' || val == 'Stage1RevisionRequested') return 'RevisionRequested';
+    if (val == 'Stage1Rejected' || val == 'Stage2Rejected') return 'Rejected';
+    return val;
+  }
+
   factory Quote.fromJson(Map<String, dynamic> json) {
-    String statusStr = 'Draft';
-    if (json['status'] != null) {
-      if (json['status'] is String) {
-        statusStr = json['status'];
-      } else if (json['status'] is Map) {
-        statusStr = json['status']['name'] ?? json['status']['value'] ?? 'Draft';
-      } else {
-        statusStr = json['status'].toString();
-      }
-    }
+    final statusStr = normalizeStatus(json['status']);
 
     final rawItems = json['items'] as List<dynamic>? ?? [];
     final itemsList = <QuoteItem>[];

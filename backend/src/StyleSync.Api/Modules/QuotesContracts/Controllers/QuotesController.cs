@@ -319,6 +319,29 @@ namespace StyleSync.Api.Controllers
 
             quote.Status = dto.Status;
             quote.UpdatedAt = DateTime.UtcNow;
+
+            // When a client submits a quote, auto-create a linked contract so it appears in the designer's Contracts Studio ready to review and sign
+            if (dto.Status == QuoteStatus.Submitted)
+            {
+                var existingContract = await _db.Contracts.FirstOrDefaultAsync(c => c.QuoteId == quote.Id);
+                if (existingContract is null)
+                {
+                    var contract = new Contract
+                    {
+                        Id = Guid.NewGuid(),
+                        QuoteId = quote.Id,
+                        ProjectRequestId = quote.ProjectRequestId,
+                        DesignerId = quote.DesignerId,
+                        ClientId = quote.ProjectRequestId != Guid.Empty ? quote.ProjectRequestId : Guid.NewGuid(),
+                        TotalAmount = quote.TotalCost,
+                        TermsSummary = $"Official StyleSync Binding Agreement for {quote.ScopeSummary ?? "Interior Design"}. Milestone schedule: 50% advance deposit due upon signing, and 50% balance upon final quality inspection and room handover.",
+                        Status = ContractStatus.PendingSignature,
+                        Quote = quote
+                    };
+                    _db.Contracts.Add(contract);
+                }
+            }
+
             await _db.SaveChangesAsync();
 
             return Ok(ToResponseDto(quote));

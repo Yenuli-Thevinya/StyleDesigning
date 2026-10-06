@@ -49,7 +49,8 @@ export default function ContractsPage() {
 
   async function handleOpenContract(contract: Contract) {
     setViewingContract(contract);
-    if (!contract.quote && contract.quoteId) {
+    const hasItems = Boolean(contract.quote?.items && contract.quote.items.length > 0);
+    if (!hasItems && contract.quoteId) {
       setLoadingQuote(true);
       try {
         const fullQuote = await getQuote(contract.quoteId);

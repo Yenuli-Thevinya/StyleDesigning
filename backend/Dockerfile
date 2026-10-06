@@ -1,9 +1,9 @@
 # Stage 1: Base Runtime
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
-EXPOSE 8080
-ENV ASPNETCORE_URLS=http://+:8080
-ENV ASPNETCORE_ENVIRONMENT=Production
+EXPOSE 5000
+ENV ASPNETCORE_URLS=http://+:5000
+ENV ASPNETCORE_ENVIRONMENT=Development
 
 # Stage 2: SDK Build & Restore
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build

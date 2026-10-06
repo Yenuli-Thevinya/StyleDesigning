@@ -50,7 +50,7 @@ class _ContractDetailBottomSheetState extends State<ContractDetailBottomSheet> {
     _contract = widget.contract;
     _quote = widget.contract.quote;
 
-    if (_quote == null && _contract.quoteId != null) {
+    if ((_quote == null || _quote!.items.isEmpty) && _contract.quoteId != null) {
       _loadLinkedQuote();
     }
   }
@@ -619,6 +619,27 @@ class _ContractDetailBottomSheetState extends State<ContractDetailBottomSheet> {
             ),
             child: Row(
               children: [
+                if (!isSigned && widget.onSign != null) ...[
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        widget.onSign?.call();
+                      },
+                      icon: const Icon(Icons.draw, size: 16, color: Colors.white),
+                      label: const Text(
+                        'Sign contract',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: Colors.white),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: QcTheme.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 if (canCancel) ...[
                   Expanded(
                     child: OutlinedButton(
@@ -643,40 +664,22 @@ class _ContractDetailBottomSheetState extends State<ContractDetailBottomSheet> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      style: OutlinedButton.styleFrom(
-                        backgroundColor: const Color(0xFF24201D),
-                        foregroundColor: QcTheme.textMain,
-                        side: const BorderSide(color: QcTheme.borderLight, width: 1),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      child: const Text(
-                        'Close',
-                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
-                      ),
-                    ),
-                  ),
-                ] else ...[
-                  const Spacer(),
-                  OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: const Color(0xFF24201D),
-                      foregroundColor: QcTheme.textMain,
-                      side: const BorderSide(color: QcTheme.borderLight, width: 1),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 28),
-                    ),
-                    child: const Text(
-                      'Close',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
-                    ),
-                  ),
+                  const SizedBox(width: 8),
                 ],
+                OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: const Color(0xFF24201D),
+                    foregroundColor: QcTheme.textMain,
+                    side: const BorderSide(color: QcTheme.borderLight, width: 1),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  ),
+                  child: const Text(
+                    'Close',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                  ),
+                ),
               ],
             ),
           ),

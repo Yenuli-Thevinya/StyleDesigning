@@ -35,6 +35,7 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
   bool _isLoadingContracts = true;
   String? _contractsError;
   String _contractStatusFilter = 'All statuses';
+  String _selectedTab = 'quotes';
 
   static const List<String> quoteStatusOptions = [
     'All statuses',
@@ -57,6 +58,8 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
   @override
   void initState() {
     super.initState();
+    final isDesigner = ref.read(authProvider).isDesigner;
+    _selectedTab = isDesigner ? 'contracts' : 'quotes';
     _loadQuotes();
     _loadContracts();
   }
@@ -109,7 +112,7 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
       if (mounted) {
         setState(() {
           _contracts = list;
-          _pendingQuotes = pendingQuotesList;
+          _pendingQuotes = pendingQuotesList.where((q) => !list.any((c) => c.quoteId == q.id)).toList();
           _isLoadingContracts = false;
         });
       }
@@ -136,6 +139,9 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
           ),
         );
       },
+      onOpenInEditor: (draftQuote) {
+        _openNewQuote(quoteToEdit: draftQuote);
+      },
     );
   }
 
@@ -153,6 +159,28 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
         );
       },
     );
+  }
+
+  Future<void> _handleSubmitQuote(Quote q) async {
+    try {
+      await _service.updateQuoteStatus(q.id, 'Submitted');
+      _loadQuotes();
+      _loadContracts();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Quote submitted! Contract created for designer review.'),
+            backgroundColor: QcTheme.primary,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to submit quote: $e'), backgroundColor: QcTheme.danger),
+        );
+      }
+    }
   }
 
   Future<void> _handleAdvanceQuote(Quote q) async {
@@ -174,6 +202,7 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
     try {
       await _service.updateQuoteStatus(q.id, nextStatus);
       _loadQuotes();
+      _loadContracts();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Quote moved to $nextStatus'), backgroundColor: QcTheme.primary),
@@ -194,9 +223,10 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
       _loadQuotes();
       _loadContracts();
       if (mounted) {
+        final shortContractId = contract?.id != null && contract!.id.length > 8 ? contract.id.substring(0, 8) : (contract?.id ?? '');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Quote accepted! Contract #${contract?.id ?? ""} automatically generated.'),
+            content: Text('Quote accepted! Contract #$shortContractId generated.'),
             backgroundColor: QcTheme.success,
           ),
         );
@@ -205,6 +235,24 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error accepting quote: $e'), backgroundColor: QcTheme.danger),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleRejectQuote(Quote q, String? reason) async {
+    try {
+      await _service.updateQuoteStatus(q.id, 'Rejected');
+      _loadQuotes();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Quote rejected'), backgroundColor: QcTheme.surfaceSunken),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to reject quote: $e'), backgroundColor: QcTheme.danger),
         );
       }
     }
@@ -486,7 +534,15 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
 
   @override
   Widget build(BuildContext context) {
-    final isDesigner = ref.watch(authProvider).isDesigner;
+    final authState = ref.watch(authProvider);
+    final isDesigner = authState.isDesigner;
+    final isClient = authState.isClient;
+
+    // Consistency with web app:
+    // Designer is locked to Contracts Studio
+    // Client is locked to Quotes Portal
+    // Admin/Guest can toggle via Tab Switcher
+    final effectiveTab = isDesigner ? 'contracts' : (isClient ? 'quotes' : _selectedTab);
 
     return Scaffold(
       backgroundColor: QcTheme.bg,
@@ -494,11 +550,15 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
         child: Column(
           children: [
             // Top App Bar
-            _buildTopAppBar(),
+            _buildTopAppBar(isDesigner: isDesigner, isClient: isClient),
+
+            // Show Tab Switcher ONLY if neither Designer nor Client (Admin/Guest)
+            if (!isDesigner && !isClient)
+              _buildTabSwitcher(),
 
             // Main Content Area
             Expanded(
-              child: isDesigner ? _buildContractsTab() : _buildQuotesTab(),
+              child: effectiveTab == 'contracts' ? _buildContractsTab() : _buildQuotesTab(),
             ),
           ],
         ),
@@ -506,7 +566,143 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
     );
   }
 
-  Widget _buildTopAppBar() {
+  Widget _buildTabSwitcher() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: QcTheme.surfaceSunken,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: QcTheme.border, width: 1),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() => _selectedTab = 'quotes');
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: _selectedTab == 'quotes' ? const Color(0xFF2E261E) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _selectedTab == 'quotes' ? const Color(0xFFC48A36) : Colors.transparent,
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.receipt_long_outlined,
+                      size: 16,
+                      color: _selectedTab == 'quotes' ? QcTheme.gold : QcTheme.textMuted,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Quotes',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: _selectedTab == 'quotes' ? FontWeight.w700 : FontWeight.w500,
+                        color: _selectedTab == 'quotes' ? QcTheme.gold : QcTheme.textMuted,
+                      ),
+                    ),
+                    if (_quotes.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: _selectedTab == 'quotes' ? const Color(0x33C48A36) : const Color(0x1FFFFFFF),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${_quotes.length}',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: _selectedTab == 'quotes' ? QcTheme.gold : QcTheme.textSubtle,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() => _selectedTab = 'contracts');
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: _selectedTab == 'contracts' ? const Color(0xFF2E261E) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _selectedTab == 'contracts' ? const Color(0xFFC48A36) : Colors.transparent,
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.verified_outlined,
+                      size: 16,
+                      color: _selectedTab == 'contracts' ? QcTheme.gold : QcTheme.textMuted,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Contracts',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: _selectedTab == 'contracts' ? FontWeight.w700 : FontWeight.w500,
+                        color: _selectedTab == 'contracts' ? QcTheme.gold : QcTheme.textMuted,
+                      ),
+                    ),
+                    if (_contracts.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: _selectedTab == 'contracts' ? const Color(0x33C48A36) : const Color(0x1FFFFFFF),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${_contracts.length}',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: _selectedTab == 'contracts' ? QcTheme.gold : QcTheme.textSubtle,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopAppBar({required bool isDesigner, required bool isClient}) {
+    String roleLabel = 'GUEST';
+    if (isDesigner) {
+      roleLabel = 'DESIGNER';
+    } else if (isClient) {
+      roleLabel = 'CLIENT';
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: const BoxDecoration(
@@ -520,7 +716,7 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
             children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back, color: QcTheme.textMuted, size: 20),
-                onPressed: () {},
+                onPressed: () => Navigator.of(context).maybePop(),
                 tooltip: 'Back',
               ),
               const SizedBox(width: 4),
@@ -544,10 +740,10 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
                 ),
               ),
               const SizedBox(width: 10),
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     'StyleSync',
                     style: TextStyle(
                       color: QcTheme.textMain,
@@ -557,8 +753,8 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
                     ),
                   ),
                   Text(
-                    'DESIGNER',
-                    style: TextStyle(
+                    roleLabel,
+                    style: const TextStyle(
                       color: QcTheme.textSubtle,
                       fontSize: 9.5,
                       fontWeight: FontWeight.w700,
@@ -570,19 +766,57 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
             ],
           ),
 
-          // Top right actions: Server Settings & Theme
+          // Role Badge matching web app:
+          // Designer -> Contracts Dashboard badge
+          // Client -> Quotes Dashboard badge
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (isDesigner)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0x2EC48A36),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0x66C48A36)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.verified_outlined, size: 14, color: QcTheme.gold),
+                      SizedBox(width: 4),
+                      Text(
+                        'Contracts Dashboard',
+                        style: TextStyle(color: QcTheme.gold, fontSize: 11, fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                )
+              else if (isClient)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0x2EC48A36),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0x66C48A36)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.receipt_long_outlined, size: 14, color: QcTheme.gold),
+                      SizedBox(width: 4),
+                      Text(
+                        'Quotes Dashboard',
+                        style: TextStyle(color: QcTheme.gold, fontSize: 11, fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(width: 6),
               IconButton(
                 icon: const Icon(Icons.dns_outlined, color: QcTheme.gold, size: 20),
                 onPressed: _openServerSettingsDialog,
                 tooltip: 'Backend Connection Settings',
-              ),
-              IconButton(
-                icon: const Icon(Icons.nightlight_round, color: QcTheme.gold, size: 20),
-                onPressed: () {},
-                tooltip: 'Theme: Dark',
               ),
             ],
           ),
@@ -590,7 +824,8 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
       ),
     );
   }
-  // ================= QUOTES TAB (Image 1) =================
+
+  // ================= QUOTES TAB =================
   Widget _buildQuotesTab() {
     return RefreshIndicator(
       onRefresh: _loadQuotes,
@@ -599,11 +834,11 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
       child: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         children: [
-          // Header: "Quotes" title & subtitle
-          Text('Quotes', style: QcTheme.serifTitle(fontSize: 32)),
+          // Header: "Quotes Portal" title & subtitle matching web
+          Text('Quotes Portal', style: QcTheme.serifTitle(fontSize: 30)),
           const SizedBox(height: 4),
           const Text(
-            'Draft, review, and turn accepted quotes into contracts.',
+            'Review itemized cost breakdowns, scope estimation, and accept or reject quotes.',
             style: TextStyle(
               color: QcTheme.textMuted,
               fontSize: 13,
@@ -810,9 +1045,19 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
               onTap: () => QuoteDetailBottomSheet.show(
                 context,
                 quote: quote,
+                onStage2Decision: (action, feedback) {
+                  if (action == 'Approve') {
+                    _handleAcceptQuote(quote);
+                  } else if (action == 'Reject') {
+                    _handleRejectQuote(quote, feedback);
+                  } else {
+                    _handleAdvanceQuote(quote);
+                  }
+                },
               ),
               onEdit: () => _openNewQuote(quoteToEdit: quote),
-              onSubmit: () => _handleAdvanceQuote(quote),
+              onSubmit: () => _handleSubmitQuote(quote),
+              onAccept: () => _handleAcceptQuote(quote),
               onDelete: () => _handleDeleteQuote(quote),
             )),
           ],
@@ -915,14 +1160,14 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
             Container(
               padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 20),
               alignment: Alignment.center,
-              child: Column(
+              child: const Column(
                 children: [
-                  const Icon(Icons.verified_outlined, size: 48, color: QcTheme.borderLight),
-                  const SizedBox(height: 12),
-                  const Text('No contracts or pending quotes yet', style: TextStyle(color: QcTheme.textMain, fontSize: 16, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  const Text('When a client submits a quote, it will appear here for you to accept and convert into a contract.', textAlign: TextAlign.center, style: TextStyle(color: QcTheme.textSubtle, fontSize: 13)),
-                  const SizedBox(height: 16),
+                  Icon(Icons.verified_outlined, size: 48, color: QcTheme.borderLight),
+                  SizedBox(height: 12),
+                  Text('No contracts or pending quotes yet', style: TextStyle(color: QcTheme.textMain, fontSize: 16, fontWeight: FontWeight.w600)),
+                  SizedBox(height: 4),
+                  Text('When a client submits a quote, it will appear here for you to accept and convert into a contract.', textAlign: TextAlign.center, style: TextStyle(color: QcTheme.textSubtle, fontSize: 13)),
+                  SizedBox(height: 16),
                 ],
               ),
             ),
@@ -937,6 +1182,15 @@ class _QuotesContractsPageState extends ConsumerState<QuotesContractsPage> with 
                 onTap: () => QuoteDetailBottomSheet.show(
                   context,
                   quote: quote,
+                  onStage2Decision: (action, feedback) {
+                    if (action == 'Approve') {
+                      _handleAcceptQuote(quote);
+                    } else if (action == 'Reject') {
+                      _handleRejectQuote(quote, feedback);
+                    } else {
+                      _handleAdvanceQuote(quote);
+                    }
+                  },
                 ),
                 onEdit: null,
                 onSubmit: () => _handleAcceptQuote(quote),

@@ -1,10 +1,9 @@
 import { useState, useEffect, type FormEvent } from "react";
 import type { Quote, QuoteItem } from "../types";
-import { computeQuotationBreakdown } from "../api/quotesApi";
 
-const CATEGORIES = ["Materials", "Labor", "Design", "Furniture", "Other"];
+const CATEGORIES = ["Design", "Labor", "Materials", "Furniture", "Other"];
 
-const emptyItem = (): QuoteItem => ({ description: "", category: "Materials", quantity: 1, unitCost: 0 });
+const emptyItem = (): QuoteItem => ({ description: "", category: "Other", quantity: 1, unitCost: 0 });
 
 function TrashIcon() {
   return (
@@ -35,7 +34,6 @@ interface QuoteFormModalProps {
   initialQuote?: Quote | null;
   projectRequestId?: string;
   designerId?: string;
-  maxBudget?: number;
   onSubmit: (payload: QuoteFormPayload) => Promise<void>;
   onClose: () => void;
 }
@@ -46,7 +44,7 @@ const normalizeCategory = (cat?: string): string => {
   return match ?? "Other";
 };
 
-export default function QuoteFormModal({ initialQuote, projectRequestId, designerId, maxBudget = 600000, onSubmit, onClose }: QuoteFormModalProps) {
+export default function QuoteFormModal({ initialQuote, projectRequestId, designerId, onSubmit, onClose }: QuoteFormModalProps) {
   const isEdit = Boolean(initialQuote);
   const [scopeSummary, setScopeSummary] = useState(initialQuote?.scopeSummary ?? "");
   const [notes, setNotes] = useState(initialQuote?.notes ?? "");
@@ -82,8 +80,7 @@ export default function QuoteFormModal({ initialQuote, projectRequestId, designe
     }
   }, [initialQuote]);
 
-  const breakdown = computeQuotationBreakdown(items);
-  const isOverBudget = maxBudget > 0 && breakdown.totalCost > maxBudget;
+  const total = items.reduce((sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.unitCost) || 0), 0);
 
   function updateItem(index: number, field: keyof QuoteItem, value: string | number) {
     setItems((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
@@ -95,10 +92,15 @@ export default function QuoteFormModal({ initialQuote, projectRequestId, designe
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (submitting) return;
+
+    if (submitting) {
+      return;
+    }
+
     setError(null);
 
     const activeItems = items.filter((i) => i.description.trim() !== "");
+
     if (activeItems.length === 0) {
       setError("Add at least one line item with a description.");
       return;
@@ -132,7 +134,7 @@ export default function QuoteFormModal({ initialQuote, projectRequestId, designe
     try {
       await onSubmit(payload);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Budget-guard validation failed.");
+      setError(err instanceof Error ? err.message : "Something went wrong saving this quote.");
     } finally {
       setSubmitting(false);
     }
@@ -140,8 +142,8 @@ export default function QuoteFormModal({ initialQuote, projectRequestId, designe
 
   return (
     <div className="qc-modal-backdrop" onMouseDown={onClose}>
-      <div className="qc-modal qc-modal--lg" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="qc-modal__title">{isEdit ? "Revise Quote (Line-Item Editor)" : "New Quote Proposal"}</div>
+      <div className="qc-modal" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="qc-modal__title">{isEdit ? "Revise quote" : "New quote"}</div>
 
         <form onSubmit={handleSubmit}>
           <div className="qc-field">
@@ -153,18 +155,11 @@ export default function QuoteFormModal({ initialQuote, projectRequestId, designe
               value={scopeSummary}
               onChange={(e) => setScopeSummary(e.target.value)}
               placeholder="Wall redesign, lighting upgrade, furniture — modern minimalist"
-              required
             />
           </div>
 
           <div className="qc-field">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <label style={{ margin: 0 }}>Line items (Materials &amp; Labor)</label>
-              <span style={{ fontSize: 11, color: "var(--qc-muted)" }}>
-                Budget Ceiling: <strong>LKR {maxBudget.toLocaleString()}</strong>
-              </span>
-            </div>
-            
+            <label>Line items</label>
             <div className="qc-item-row" style={{ fontSize: 12, color: "var(--qc-muted)", marginBottom: 4 }}>
               <span>Description</span>
               <span>Category</span>
@@ -220,49 +215,26 @@ export default function QuoteFormModal({ initialQuote, projectRequestId, designe
             </button>
           </div>
 
-          {/* Quotation Engine Live Computation Summary */}
-          <div style={{ background: "rgba(196, 138, 54, 0.06)", border: "1px solid rgba(196, 138, 54, 0.2)", borderRadius: 10, padding: 14, marginTop: 12, marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#C48A36", marginBottom: 8, textTransform: "uppercase" }}>
-              ⚡ Quotation Engine Computed Breakdown
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, fontSize: 12 }}>
-              <div>Materials: <strong>LKR {breakdown.materialsSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
-              <div>Labor: <strong>LKR {breakdown.laborSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
-              <div>Design Fee (10%): <strong>LKR {breakdown.designFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
-              <div>Contingency (5%): <strong>LKR {breakdown.contingencyAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
-              <div>Tax / VAT (8%): <strong>LKR {breakdown.taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
-              <div>Computed Total: <strong style={{ color: isOverBudget ? "var(--qc-danger)" : "#C48A36" }}>LKR {breakdown.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
-            </div>
-            {isOverBudget && (
-              <div style={{ color: "var(--qc-danger)", fontSize: 12, fontWeight: 600, marginTop: 8 }}>
-                ⚠️ Over client maximum budget by LKR {(breakdown.totalCost - maxBudget).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </div>
-            )}
-          </div>
-
           <div className="qc-field">
-            <label htmlFor="notes">Notes / Revision details</label>
+            <label htmlFor="notes">Notes (internal)</label>
             <textarea
               id="notes"
               className="qc-input"
-              style={{ width: "100%", minHeight: 50, resize: "vertical" }}
+              style={{ width: "100%", minHeight: 64, resize: "vertical" }}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Internal notes or specific changes made in this revision..."
             />
           </div>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20 }}>
             <div>
               <span style={{ fontSize: 12, color: "var(--qc-muted)" }}>Total: </span>
-              <span className="qc-money" style={{ color: isOverBudget ? "var(--qc-danger)" : "#C48A36" }}>
-                LKR {breakdown.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </span>
+              <span className="qc-money">LKR {total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button type="button" className="qc-btn qc-btn--ghost" onClick={onClose} disabled={submitting}>Cancel</button>
-              <button type="submit" className="qc-btn qc-btn--primary" disabled={submitting || isOverBudget}>
-                {submitting ? "Validating & Saving…" : isEdit ? "Save as New Version" : "Create Quote"}
+              <button type="submit" className="qc-btn qc-btn--primary" disabled={submitting}>
+                {submitting ? "Saving…" : isEdit ? "Save changes" : "Create quote"}
               </button>
             </div>
           </div>

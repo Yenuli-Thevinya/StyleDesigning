@@ -36,7 +36,7 @@ class QuoteDetailBottomSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusStr = quote.status.toLowerCase();
-    final isReleased = statusStr == 'stage1released' || statusStr == 'clientreview';
+    final isReleased = statusStr == 'stage1released' || statusStr == 'clientreview' || statusStr == 'submitted';
     final currentVer = quote.currentVersion;
 
     return Container(
