@@ -151,25 +151,24 @@ namespace StyleSync.Api.Controllers
                 Preferences = dto.Preferences
             };
 
-            HttpResponseMessage agentHttpResponse;
+            AgentBudgetScopeResponse? agentResult = null;
             try
             {
-                agentHttpResponse = await client.PostAsJsonAsync("/agents/budget-scope", agentRequest);
+                var agentHttpResponse = await client.PostAsJsonAsync("/agents/budget-scope", agentRequest);
+                if (agentHttpResponse.IsSuccessStatusCode)
+                {
+                    agentResult = await agentHttpResponse.Content.ReadFromJsonAsync<AgentBudgetScopeResponse>();
+                }
             }
-            catch (HttpRequestException ex)
+            catch (Exception)
             {
-                return StatusCode(502, new { message = $"Couldn't reach the AI service at {client.BaseAddress}. Is it running? ({ex.Message})" });
+                // Fall back to deterministic calculation
             }
 
-            if (!agentHttpResponse.IsSuccessStatusCode)
-            {
-                var errBody = await agentHttpResponse.Content.ReadAsStringAsync();
-                return StatusCode(502, new { message = $"AI service returned {(int)agentHttpResponse.StatusCode}: {errBody}" });
-            }
-
-            var agentResult = await agentHttpResponse.Content.ReadFromJsonAsync<AgentBudgetScopeResponse>();
             if (agentResult is null || agentResult.Items.Count == 0)
-                return StatusCode(502, new { message = "AI service returned an empty draft." });
+            {
+                agentResult = GenerateFallbackEstimate(agentRequest);
+            }
 
             var quoteId = Guid.NewGuid();
             var quote = new Quote
@@ -221,27 +220,69 @@ namespace StyleSync.Api.Controllers
                 Preferences = dto.Preferences
             };
 
-            HttpResponseMessage agentHttpResponse;
+            AgentBudgetScopeResponse? agentResult = null;
             try
             {
-                agentHttpResponse = await client.PostAsJsonAsync("/agents/budget-scope", agentRequest);
+                var agentHttpResponse = await client.PostAsJsonAsync("/agents/budget-scope", agentRequest);
+                if (agentHttpResponse.IsSuccessStatusCode)
+                {
+                    agentResult = await agentHttpResponse.Content.ReadFromJsonAsync<AgentBudgetScopeResponse>();
+                }
             }
-            catch (HttpRequestException ex)
+            catch (Exception)
             {
-                return StatusCode(502, new { message = $"Couldn't reach the AI service at {client.BaseAddress}. Is it running? ({ex.Message})" });
+                // Fall back to deterministic calculation
             }
 
-            if (!agentHttpResponse.IsSuccessStatusCode)
-            {
-                var errBody = await agentHttpResponse.Content.ReadAsStringAsync();
-                return StatusCode(502, new { message = $"AI service returned {(int)agentHttpResponse.StatusCode}: {errBody}" });
-            }
-
-            var agentResult = await agentHttpResponse.Content.ReadFromJsonAsync<AgentBudgetScopeResponse>();
             if (agentResult is null || agentResult.Items.Count == 0)
-                return StatusCode(502, new { message = "AI service returned an empty draft." });
+            {
+                agentResult = GenerateFallbackEstimate(agentRequest);
+            }
 
             return Ok(agentResult);
+        }
+
+        private static AgentBudgetScopeResponse GenerateFallbackEstimate(AgentBudgetScopeRequest request)
+        {
+            decimal targetBudget = (request.BudgetMin + request.BudgetMax) / 2 > 0
+                ? (request.BudgetMin + request.BudgetMax) / 2
+                : (decimal)request.RoomSizeSqft * 800m;
+
+            var style = string.IsNullOrWhiteSpace(request.StyleProfile) ? "Modern" : request.StyleProfile;
+            var room = string.IsNullOrWhiteSpace(request.RoomType) ? "Living Room" : request.RoomType;
+
+            var split = new (string Category, decimal Pct, string Desc)[]
+            {
+                ("Design", 0.10m, $"Design — {style.ToLower()} {room.ToLower()} concept & planning"),
+                ("Labor", 0.30m, $"Labor — {style.ToLower()} {room.ToLower()} installation & craftsmanship"),
+                ("Materials", 0.35m, $"Materials — {style.ToLower()} {room.ToLower()} fixtures & finishes"),
+                ("Furniture", 0.25m, $"Furniture — {style.ToLower()} {room.ToLower()} curated styling"),
+            };
+
+            var items = new List<AgentQuoteItemDraft>();
+            foreach (var s in split)
+            {
+                decimal unitCost = Math.Round((targetBudget * s.Pct) / 100m, 0) * 100m;
+                items.Add(new AgentQuoteItemDraft
+                {
+                    Description = s.Desc,
+                    Category = s.Category,
+                    Quantity = 1,
+                    UnitCost = unitCost
+                });
+            }
+
+            decimal total = items.Sum(i => i.UnitCost * i.Quantity);
+
+            return new AgentBudgetScopeResponse
+            {
+                ScopeSummary = $"{style} {room.ToLower()} refresh, {request.RoomSizeSqft:0} sq ft.",
+                Items = items,
+                Notes = "Estimate generated via category ratio allocation (Design 10%, Labor 30%, Materials 35%, Furniture 25%).",
+                EstimatedTotal = total,
+                WithinBudget = request.BudgetMax > 0 ? (total >= request.BudgetMin && total <= request.BudgetMax) : true,
+                Source = "fallback"
+            };
         }
 
         // PUT /api/quotes/{id}
